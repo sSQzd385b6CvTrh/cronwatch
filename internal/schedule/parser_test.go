@@ -87,3 +87,17 @@ func TestNextAfter_WeekdayConstraint(t *testing.T) {
 		t.Errorf("NextAfter got %v, want %v", next, expected)
 	}
 }
+
+func TestNextAfter_MidnightRollover(t *testing.T) {
+	// Fires at 00:30 every day; base is just before midnight.
+	c, err := Parse("30 0 * * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2024, 1, 15, 23, 45, 0, 0, time.UTC)
+	next := c.NextAfter(base)
+	expected := time.Date(2024, 1, 16, 0, 30, 0, 0, time.UTC)
+	if !next.Equal(expected) {
+		t.Errorf("NextAfter got %v, want %v", next, expected)
+	}
+}
