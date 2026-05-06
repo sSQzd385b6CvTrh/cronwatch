@@ -8,50 +8,55 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Job describes a single monitored cron job entry.
-type Job struct {
-	Name      string        `yaml:"name"`
-	Schedule  string        `yaml:"schedule"`
-	DriftMax  time.Duration `yaml:"drift_max"`
+// JobConfig holds the configuration for a single monitored cron job.
+type JobConfig struct {
+	Name     string        `yaml:"name"`
+	Schedule string        `yaml:"schedule"`
+	Drift    time.Duration `yaml:"drift"`
 }
 
-// EmailConfig mirrors notifier.EmailConfig for YAML unmarshalling.
-type EmailConfig struct {
-	Host     string   `yaml:"host"`
-	Port     int      `yaml:"port"`
-	Username string   `yaml:"username"`
-	Password string   `yaml:"password"`
-	From     string   `yaml:"from"`
-	To       []string `yaml:"to"`
-}
-
-// NotifierConfig groups all supported notification sink configurations.
+// NotifierConfig holds sink-specific configuration.
 type NotifierConfig struct {
-	WebhookURL string       `yaml:"webhook_url"`
-	Email      *EmailConfig `yaml:"email,omitempty"`
+	Log        bool              `yaml:"log"`
+	WebhookURL string            `yaml:"webhook_url"`
+	SlackURL   string            `yaml:"slack_url"`
+	PagerDuty  PagerDutyConfig   `yaml:"pagerduty"`
+	Email      EmailConfig       `yaml:"email"`
+}
+
+// PagerDutyConfig holds PagerDuty-specific settings.
+type PagerDutyConfig struct {
+	RoutingKey string        `yaml:"routing_key"`
+	Timeout    time.Duration `yaml:"timeout"`
+}
+
+// EmailConfig holds SMTP settings.
+type EmailConfig struct {
+	Host       string   `yaml:"host"`
+	Port       int      `yaml:"port"`
+	From       string   `yaml:"from"`
+	Recipients []string `yaml:"recipients"`
 }
 
 // Config is the top-level cronwatch configuration.
 type Config struct {
 	PollEvery time.Duration  `yaml:"poll_every"`
-	Jobs      []Job          `yaml:"jobs"`
+	Jobs      []JobConfig    `yaml:"jobs"`
 	Notifier  NotifierConfig `yaml:"notifier"`
 }
 
 const defaultPollEvery = 60 * time.Second
 
-// Load reads and validates a YAML configuration file from the given path.
+// Load reads and validates a YAML config file from path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("config: read %q: %w", path, err)
 	}
-
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("config: parse %q: %w", path, err)
+		return nil, fmt.Errorf("config: parse: %w", err)
 	}
-
 	if len(cfg.Jobs) == 0 {
 		return nil, fmt.Errorf("config: no jobs defined")
 	}
