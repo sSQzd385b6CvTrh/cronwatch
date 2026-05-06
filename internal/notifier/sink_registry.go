@@ -1,46 +1,42 @@
 package notifier
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
-// SinkType enumerates the supported notification sink backends.
+// SinkType identifies a supported notification backend.
 type SinkType string
 
 const (
 	SinkLog       SinkType = "log"
 	SinkWebhook   SinkType = "webhook"
-	SinkSlack     SinkType = "slack"
 	SinkEmail     SinkType = "email"
+	SinkSlack     SinkType = "slack"
 	SinkPagerDuty SinkType = "pagerduty"
 	SinkOpsGenie  SinkType = "opsgenie"
 	SinkVictorOps SinkType = "victorops"
 	SinkSNS       SinkType = "sns"
+	SinkDatadog   SinkType = "datadog"
 )
 
-// KnownSinkTypes returns all registered sink type identifiers.
-func KnownSinkTypes() []SinkType {
-	return []SinkType{
-		SinkLog,
-		SinkWebhook,
-		SinkSlack,
-		SinkEmail,
-		SinkPagerDuty,
-		SinkOpsGenie,
-		SinkVictorOps,
-		SinkSNS,
-	}
+// KnownSinkTypes lists every sink type recognised by cronwatch.
+var KnownSinkTypes = []SinkType{
+	SinkLog,
+	SinkWebhook,
+	SinkEmail,
+	SinkSlack,
+	SinkPagerDuty,
+	SinkOpsGenie,
+	SinkVictorOps,
+	SinkSNS,
+	SinkDatadog,
 }
 
-// ParseSinkType converts a raw string to a SinkType, returning an error if
-// the value is not recognised.
-func ParseSinkType(raw string) (SinkType, error) {
-	norm := SinkType(strings.ToLower(strings.TrimSpace(raw)))
-	for _, known := range KnownSinkTypes() {
-		if norm == known {
-			return norm, nil
+// ParseSinkType converts a raw string to a validated SinkType.
+func ParseSinkType(s string) (SinkType, error) {
+	t := SinkType(s)
+	for _, k := range KnownSinkTypes {
+		if t == k {
+			return t, nil
 		}
 	}
-	return "", fmt.Errorf("notifier: unknown sink type %q", raw)
+	return "", fmt.Errorf("unknown sink type %q", s)
 }
