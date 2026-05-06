@@ -1,7 +1,7 @@
-// Package config handles loading and validating cronwatch configuration.
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -11,25 +11,27 @@ import (
 
 // Job describes a single monitored cron job.
 type Job struct {
-	Name        string        `yaml:"name"`
-	Schedule    string        `yaml:"schedule"`
-	DriftLimit  time.Duration `yaml:"drift_limit"`
-	MissedAfter time.Duration `yaml:"missed_after"`
+	Name     string        `yaml:"name"`
+	Schedule string        `yaml:"schedule"`
+	DriftMax time.Duration `yaml:"drift_max"`
 }
 
-// Notifier holds sink-specific configuration.
-type Notifier struct {
-	LogFile string `yaml:"log_file"`
+// Webhook holds optional webhook notification settings.
+type Webhook struct {
+	URL     string        `yaml:"url"`
+	Timeout time.Duration `yaml:"timeout"`
 }
 
 // Config is the top-level configuration structure.
 type Config struct {
-	Jobs      []Job     `yaml:"jobs"`
-	Notifier  Notifier  `yaml:"notifier"`
 	PollEvery time.Duration `yaml:"poll_every"`
+	Webhook   *Webhook      `yaml:"webhook,omitempty"`
+	Jobs      []Job         `yaml:"jobs"`
 }
 
-// Load reads a YAML config file from path and returns a validated Config.
+const defaultPollEvery = 30 * time.Second
+
+// Load reads and validates the YAML config file at path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -41,42 +43,30 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config: parse: %w", err)
 	}
 
-	if err := cfg.validate(); err != nil {
-		return nil, err
+	if len(cfg.Jobs) == 0 {
+		return nil, errors.New("config: no jobs defined")
+	}
+	for i, j := range cfg.Jobs {
+		if j.Name == "" {
+			return nil, fmt.Errorf("config: job[%d]: missing name", i)
+		}
+		if j.Schedule == "" {
+			return nil, fmt.Errorf("config: job %q: missing schedule", j.Name)
+		}
 	}
 
-	// Apply sensible defaults.
 	if cfg.PollEvery == 0 {
-		cfg.PollEvery = time.Minute
+		cfg.PollEvery = defaultPollEvery
 	}
-	for i := range cfg.Jobs {
-		if cfg.Jobs[i].DriftLimit == 0 {
-			cfg.Jobs[i].DriftLimit = 5 * time.Minute
+
+	if cfg.Webhook != nil {
+		if cfg.Webhook.URL == "" {
+			return nil, errors.New("config: webhook: url must not be empty")
 		}
-		if cfg.Jobs[i].MissedAfter == 0 {
-			cfg.Jobs[i].MissedAfter = 2 * cfg.PollEvery
+		if cfg.Webhook.Timeout == 0 {
+			cfg.Webhook.Timeout = 10 * time.Second
 		}
 	}
 
 	return &cfg, nil
-}
-
-func (c *Config) validate() error {
-	if len(c.Jobs) == 0 {
-		return fmt.Errorf("config: at least one job must be defined")
-	}
-	seen := make(map[string]bool, len(c.Jobs))
-	for _, j := range c.Jobs {
-		if j.Name == "" {
-			return fmt.Errorf("config: job missing name")
-		}
-		if j.Schedule == "" {
-			return fmt.Errorf("config: job %q missing schedule", j.Name)
-		}
-		if seen[j.Name] {
-			return fmt.Errorf("config: duplicate job name %q", j.Name)
-		}
-		seen[j.Name] = true
-	}
-	return nil
 }
