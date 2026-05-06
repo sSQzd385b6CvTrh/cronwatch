@@ -105,3 +105,15 @@ jobs:
 		t.Fatal("expected error for missing schedule")
 	}
 }
+
+func TestLoad_InvalidCronExpression(t *testing.T) {
+	path := writeTemp(t, `
+jobs:
+  - name: bad-cron
+    schedule: "not a cron expression"
+`)
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("expected error for invalid cron expression")
+	}
+}
