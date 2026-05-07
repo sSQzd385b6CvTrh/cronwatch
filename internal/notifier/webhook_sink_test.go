@@ -44,6 +44,10 @@ func TestWebhookSink_Send_Success(t *testing.T) {
 	if received.Message != "job missed" {
 		t.Errorf("message = %q, want %q", received.Message, "job missed")
 	}
+	expectedTS := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	if !received.Timestamp.Equal(expectedTS) {
+		t.Errorf("timestamp = %v, want %v", received.Timestamp, expectedTS)
+	}
 }
 
 func TestWebhookSink_Send_NonOKStatus(t *testing.T) {
