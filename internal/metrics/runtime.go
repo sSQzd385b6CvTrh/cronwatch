@@ -6,29 +6,32 @@ import (
 	"time"
 )
 
-// RuntimeSnapshot holds a point-in-time view of Go runtime statistics.
-type RuntimeSnapshot struct {
-	Timestamp    time.Time `json:"timestamp"`
-	GoRoutines   int       `json:"goroutines"`
-	HeapAllocMB  float64   `json:"heap_alloc_mb"`
-	HeapSysMB    float64   `json:"heap_sys_mb"`
-	GCCycles     uint32    `json:"gc_cycles"`
-	NextGCMB     float64   `json:"next_gc_mb"`
+// RuntimeSample holds a point-in-time snapshot of Go runtime statistics.
+type RuntimeSample struct {
+	Timestamp   time.Time
+	Goroutines  int
+	HeapAllocMB float64
+	HeapSysMB   float64
+	GCCycles    uint32
+	NextGCMB    float64
 }
 
 // RuntimeCollector periodically samples Go runtime metrics.
 type RuntimeCollector struct {
-	mu       sync.RWMutex
-	latest   RuntimeSnapshot
-	stop     chan struct{}
 	interval time.Duration
+	mu       sync.RWMutex
+	latest   RuntimeSample
+	stop     chan struct{}
+	wg       sync.WaitGroup
 }
 
+const defaultRuntimeInterval = 15 * time.Second
+
 // NewRuntimeCollector creates a RuntimeCollector that samples every interval.
-// Call Start to begin collection and Stop when done.
+// If interval is zero, defaultRuntimeInterval is used.
 func NewRuntimeCollector(interval time.Duration) *RuntimeCollector {
 	if interval <= 0 {
-		interval = 30 * time.Second
+		interval = defaultRuntimeInterval
 	}
 	return &RuntimeCollector{
 		interval: interval,
@@ -38,8 +41,10 @@ func NewRuntimeCollector(interval time.Duration) *RuntimeCollector {
 
 // Start begins background sampling. It is safe to call once.
 func (rc *RuntimeCollector) Start() {
-	rc.sample() // immediate first sample
+	rc.sample()
+	rc.wg.Add(1)
 	go func() {
+		defer rc.wg.Done()
 		ticker := time.NewTicker(rc.interval)
 		defer ticker.Stop()
 		for {
@@ -53,13 +58,14 @@ func (rc *RuntimeCollector) Start() {
 	}()
 }
 
-// Stop halts background sampling.
+// Stop halts background sampling and waits for the goroutine to exit.
 func (rc *RuntimeCollector) Stop() {
 	close(rc.stop)
+	rc.wg.Wait()
 }
 
-// Latest returns the most recently collected RuntimeSnapshot.
-func (rc *RuntimeCollector) Latest() RuntimeSnapshot {
+// Latest returns the most recently collected RuntimeSample.
+func (rc *RuntimeCollector) Latest() RuntimeSample {
 	rc.mu.RLock()
 	defer rc.mu.RUnlock()
 	return rc.latest
@@ -68,17 +74,15 @@ func (rc *RuntimeCollector) Latest() RuntimeSnapshot {
 func (rc *RuntimeCollector) sample() {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
-
-	snap := RuntimeSnapshot{
+	s := RuntimeSample{
 		Timestamp:   time.Now().UTC(),
-		GoRoutines:  runtime.NumGoroutine(),
+		Goroutines:  runtime.NumGoroutine(),
 		HeapAllocMB: float64(ms.HeapAlloc) / (1024 * 1024),
 		HeapSysMB:   float64(ms.HeapSys) / (1024 * 1024),
 		GCCycles:    ms.NumGC,
 		NextGCMB:    float64(ms.NextGC) / (1024 * 1024),
 	}
-
 	rc.mu.Lock()
-	rc.latest = snap
+	rc.latest = s
 	rc.mu.Unlock()
 }
