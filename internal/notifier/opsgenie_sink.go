@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -73,7 +74,12 @@ func (s *OpsGenieSink) Send(a tracker.Alert) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("opsgenie: unexpected status %d", resp.StatusCode)
+		// Include response body in the error to aid debugging.
+		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if readErr != nil || len(respBody) == 0 {
+			return fmt.Errorf("opsgenie: unexpected status %d", resp.StatusCode)
+		}
+		return fmt.Errorf("opsgenie: unexpected status %d: %s", resp.StatusCode, respBody)
 	}
 	return nil
 }
