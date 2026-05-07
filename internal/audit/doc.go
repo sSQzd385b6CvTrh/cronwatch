@@ -1,30 +1,27 @@
-// Package audit implements a lightweight, append-only audit log for cronwatch.
+// Package audit provides a structured, append-only audit log for cronwatch
+// daemon events such as job registrations, missed runs, drift detections, and
+// configuration reloads.
 //
-// Every significant event in the daemon lifecycle — job registration, run
-// recorded, drift detected, missed run — is written as a newline-delimited
-// JSON record to a configurable file path and simultaneously stored in an
-// in-memory ring buffer for fast, lock-safe retrieval.
+// # Overview
 //
-// # Usage
-//
-//	l, err := audit.New("/var/log/cronwatch/audit.jsonl", 0)
-//	if err != nil { /* handle */ }
-//	defer l.Close()
-//
-//	l.Log(audit.KindRun, "daily-backup", "")
-//	l.Log(audit.KindDrift, "daily-backup", "exceeded threshold by 4.2s")
-//
-//	// Expose over HTTP:
-//	http.Handle("/audit", audit.Handler(l))
+// An [Logger] writes [Entry] values to an underlying file and simultaneously
+// retains the most recent entries in an in-memory ring buffer for fast
+// retrieval via the HTTP handler.
 //
 // # Ring buffer
 //
-// The in-memory ring buffer retains at most maxEntries records (default 1000).
-// When the buffer is full, the oldest entry is silently overwritten. Retrieve
-// recent entries with Logger.Recent(n).
+// The ring buffer (see ring_buffer.go) is a fixed-capacity circular structure.
+// When the buffer is full, the oldest entry is silently discarded to make room
+// for the new one. The default capacity is 500 entries, matching the drift
+// sample cap used by the metrics subsystem.
 //
-// # HTTP endpoint
+// # HTTP handler
 //
-// Handler returns an http.Handler that serves entries as JSON. Callers may
-// filter by kind (?kind=drift) and limit results (?n=50).
+// [Handler] exposes a GET endpoint that returns recent audit entries as JSON.
+// Callers may filter by kind (?kind=missed_run) and limit the result count
+// (?n=50). Only GET requests are accepted; all other methods receive 405.
+//
+// # Thread safety
+//
+// All exported methods on [Logger] are safe for concurrent use.
 package audit
