@@ -1,5 +1,5 @@
-// Package ratelimit provides per-job alert rate limiting to prevent
-// notification storms when a cron job repeatedly misses or drifts.
+// Package ratelimit provides per-job and global alert rate-limiting so that
+// a flapping cron job does not flood notification sinks.
 package ratelimit
 
 import (
@@ -7,58 +7,71 @@ import (
 	"time"
 )
 
-// Limiter suppresses duplicate alerts for the same job within a
-// configurable cooldown window.
+// Limiter is a simple cooldown-based rate limiter. After an event is allowed
+// through, subsequent calls to Allow return false until the cooldown elapses.
 type Limiter struct {
-	mu       sync.Mutex
-	cooldown time.Duration
-	last     map[string]time.Time
-	now      func() time.Time // injectable for testing
+	mu          sync.Mutex
+	cooldown    time.Duration
+	lastAllowed time.Time
+	clock       func() time.Time
 }
 
-// New returns a Limiter that enforces the given cooldown between alerts
-// for the same job name. A zero or negative cooldown means every alert
-// is allowed through.
+// New creates a Limiter with the given cooldown. A zero cooldown means every
+// call is allowed.
 func New(cooldown time.Duration) *Limiter {
 	return &Limiter{
 		cooldown: cooldown,
-		last:     make(map[string]time.Time),
-		now:      time.Now,
+		clock:    time.Now,
 	}
 }
 
-// Allow returns true if an alert for job should be sent, and records the
-// current time as the last alert time for that job. If the cooldown has
-// not elapsed since the previous alert, Allow returns false.
-func (l *Limiter) Allow(job string) bool {
-	if l.cooldown <= 0 {
+// Allow returns true if the cooldown has elapsed since the last allowed event
+// (or if no event has been allowed yet). When true is returned the internal
+// timestamp is updated.
+func (l *Limiter) Allow() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := l.clock()
+	if l.cooldown == 0 {
+		l.lastAllowed = now
 		return true
 	}
-
-	now := l.now()
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if t, ok := l.last[job]; ok && now.Sub(t) < l.cooldown {
-		return false
+	if l.lastAllowed.IsZero() || now.Sub(l.lastAllowed) >= l.cooldown {
+		l.lastAllowed = now
+		return true
 	}
-
-	l.last[job] = now
-	return true
+	return false
 }
 
-// Reset clears the rate-limit state for a specific job, allowing the
-// next alert to be sent immediately regardless of cooldown.
-func (l *Limiter) Reset(job string) {
+// NextAllowedAt returns the earliest time at which Allow will return true.
+// If Allow would return true right now, the zero value is returned.
+func (l *Limiter) NextAllowedAt() time.Time {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	delete(l.last, job)
+
+	if l.lastAllowed.IsZero() || l.cooldown == 0 {
+		return time.Time{}
+	}
+	next := l.lastAllowed.Add(l.cooldown)
+	if l.clock().Before(next) {
+		return next
+	}
+	return time.Time{}
 }
 
-// ResetAll clears rate-limit state for every tracked job.
-func (l *Limiter) ResetAll() {
+// Remaining returns how long until the limiter resets. Returns 0 if already
+// allowed.
+func (l *Limiter) Remaining() time.Duration {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.last = make(map[string]time.Time)
+
+	if l.lastAllowed.IsZero() || l.cooldown == 0 {
+		return 0
+	}
+	d := l.cooldown - l.clock().Sub(l.lastAllowed)
+	if d < 0 {
+		return 0
+	}
+	return d
 }
