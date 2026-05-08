@@ -8,6 +8,15 @@
 // retains the most recent entries in an in-memory ring buffer for fast
 // retrieval via the HTTP handler.
 //
+// # Entry kinds
+//
+// Each [Entry] carries a Kind field that identifies the type of event:
+//
+//   - KindJobRegistered  – a new cron job was registered with the daemon
+//   - KindMissedRun      – a scheduled run was not observed within its window
+//   - KindDriftDetected  – execution timing drifted beyond the configured threshold
+//   - KindConfigReloaded – the daemon reloaded its configuration from disk
+//
 // # Ring buffer
 //
 // The ring buffer (see ring_buffer.go) is a fixed-capacity circular structure.
